@@ -173,15 +173,6 @@ platanus gap_close \
 ```
 cegma --genome --threads 32 --output SP_assembly.platanus.fa
 ```
-###BUSCO(v1.1b1)
-```
-python3 BUSCO_v1.1b1.py -f \
--g SP_assembly.platanus.fa  \
---cpu 16 \
--o Sp 
---lineage /busco/metazoa \
---mode all \
-```
 ###Map reads back to assembly with bwa
 ```
  bwa mem \
@@ -275,4 +266,19 @@ autoAug.pl --species=Sp \
 --optrounds=3 > augustus.out.txt
 ```
 
-## Final information
+## Genome stats
+
+| | *M. javanica* VW4 illumina | *M. javanica* VW4 pacbio | *M. incognita* W1 | *M. arenaria* HarA| *M. enterolobii* L30| *M. floridensis* |
+| :--- | :---:   |    :---:       | :---:          |  :---:        |  :---:           |             ---: |
+Scaffolds |  34,394   |   5,527        | 33,735        |  46,509          | 46,090  | |
+Genome Span | 142,608,877 | 212,245,641 | 122,043,328  | 163,770,989 | 162,361,678 | |
+Longest scaffold | 223,460 | 510,271 |  248,829 | 163,224 | 94,967 | |
+N50 | 14,133 | 44,602 | 16,498 | 10,504 |  9,280 | |
+GC | 29.6 | 29.3 | 0.299 |  29.5 |  29.7 | |
+Mapped reads | 98.82% | 97.16% | 99.1% | 98.8% | 90.19% | |
+18S | yes | yes | yes | yes | yes | |
+mitochondria | yes | yes | yes | yes | yes | |
+CEGMA completness | 90.32% | 93.95% | 82.66% | 91.13% | 81.45% | |
+CEGMA average | 2.51 | 3.17 | 2.38 | 2.76 | 2.61 | |
+Predicted Genes | 26.917 | 29.413 | 24.714 | 30.308 | 31.051 | |
+Functional Annotated | 17.659 | | 15.938 | 20.813  |  | |
