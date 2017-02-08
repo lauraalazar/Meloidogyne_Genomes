@@ -36,44 +36,48 @@ Species         | Strain | Location    | Insert size | Reads       | Size (bp)  
 ```
 /fastqc_v0.11.2/fastqc file.fastq.gz
 ```
-### Preqc
+### Preqc (2014.03.05)
 ```
 # Filter and quality trim reads
-/sga-2014.03.05/bin/sga preprocess --pe-mode 1 file_R1.fastq.gz file_R2.fastq.gz > file_ilv.fastq
+sga preprocess --pe-mode 1 file_R1.fastq.gz file_R2.fastq.gz > file_ilv.fastq
 
 #Build index
-/sga-2014.03.05/bin/sga index -a ropebwt --no-reverse -t 8 file_ilv.fastq
+sga index -a ropebwt --no-reverse -t 8 file_ilv.fastq
 
 #Pre-assembly quality check
-/sga-2014.03.05/bin/sga preqc -t 8 file_ilv.fastq > file.preqc
+sga preqc -t 8 file_ilv.fastq > file.preqc
 
 #Create a report
 source /virt_env/python/matplotlib_1.4/bin/activate
-/sga-2014.03.05/src/bin/sga-preqc-report.py file.preqc
+sga-preqc-report.py file.preqc
 ```
-## Filtering of reads (for the description of the protocol see https://blobtools.readme.io/)
-### Preliminary assembly and mapping with clc
+## Filtering of reads (for protocol see https://blobtools.readme.io/)
+### Preliminary assembly with clc (5.0.0), mapping bowtie (2-2.2.9) and sort with samtools (1.3.1)
 ```
 #Assembly with clc
-module load /exports/modules/clc/5.0.0
-clc_assembler -o assembly_clc.fasta -q file_R1.fastq.gz file_R2.fastq.gz
+clc_assembler \
+-o assembly_clc.fasta \
+-q raw_R1.fastq.gz raw_R2.fastq.gz
 
 #Mapping with bowtie
-/bwa index -a bwtsw assembly_clc.fasta 
+bowtie2 \
+-x assembly_clc.fasta \
+-1 raw_R1.fastq.gz \
+-2 raw_R2.fastq.gz \
+-p 16 \
+| samtools-1.3.1/samtools view - -b > assembly_map.bowtie
+bam
 
-/bwa mem 
--t 16 
--v assembly_clc.fasta \
-file_R1.fastq.gz \
-file_R2.fastq.gz | \
-/samtools-1.1/samtools view -buS - | \
-/samtools-1.1/samtools sort - assembly_map.bowtie.sorted.bam
-
+#Sort with samtools
+samtools sort \
+-n assembly_map.bowtie.bam \
+-@ 16 \
+-o assembly_map.bowtie.sorted
 ```
 ###Blobplots
 ```
-#Blast the assembly against the nt database
-/blast/2.2.30+/blastn -task megablast 
+#Blast (2.2.30+) the assembly against the nt database
+blastn -task megablast 
 -query assembly_clc.fasta \
 -db nt \
 -evalue 1e-5 \
@@ -94,16 +98,50 @@ file_R2.fastq.gz | \
 source /exports/virt_env/python/matplotlib/bin/activate
 
 /blobtools-light/plotblobs.py assembly.blobplot.txt
+```
+### Filter our reads
+```
+#Index the assembly with samtools
+samtools faidx assembly_clc.fasta
+
+#Find bacteria contigs in the assembly (e.g. Proteobacteria)
+grep "tax=Proteobacteria" assembly.25cul1.1e25_lib2.megablast.blobplot.txt |  cut -f1 > assembly_proteobacteria.contigs
+
+#Remove the the contigs from the indexed assembly
+#grep -v -f assembly_proteobacteria.contigs assembly_clc.fasta.fai > assembly_clc_noprot.fasta.fai
+
+#Get non-bacteria contigs with both reads mapped
+samtools view \
+-t assembly_clc_noprot.fasta.fai  \
+-bS -F12 assembly_map_lib1.bowtie.sorted.bam \
+> Sp_lib1.m_m.bam
+
+#Pull the reads that mapped to non-bacteria contigs
+/samtools-1.3.1/samtools view \
+-uf64 Sp_lib1.m_m.bam \
+| /samtools-1.3.1/samtools bam2fq - \
+| gzip > Sp_lib1.reads1.fq.gz
 
 ```
-## Trimming
+
+## Trimming with Skewer (0.2.2-linux-x86_64)
 ```
+skewer-0.2.2-linux-x86_64 \
+-n \
+-y adapters.fa \
+-q 20 \
+-l 25 \
+-m pe \
+o Sp_lib \
+-t 32 \
+Sp_lib1.reads1.fq.gz \
+Sp_lib1.reads2.fq.gz
 
 ```
-## Assembly
+## Assembly with Platanus (1.2.4)
 ```
 #Contigs
-/platanus/1.2.4/platanus assemble \
+platanus assemble \
 -t 48 \
 -m 400 \
 -o Sp \
@@ -114,7 +152,7 @@ Sp_lib2-trimmed-pair1.fastq \
 Sp_lib2-trimmed-pair2.fastq
 
 #Scaffolds
-/platanus/1.2.4/platanus scaffold \
+platanus scaffold \
 -t 48 \
 -b Sp_contigBubble.fa \
 -c Sp_contig.fa \
@@ -123,16 +161,118 @@ Sp_lib2-trimmed-pair2.fastq
 -IP2  Sp_lib2-trimmed-pair1.fastq Sp_lib2-trimmed-pair2.fastq
 
 #Gap closing
-/platanus/1.2.4/platanus gap_close \
+platanus gap_close \
 -t 48 \
 -c Sp_scaffold.fa \
 -IP1  Sp_lib1-trimmed-pair1.fastq Sp_lib1-trimmed-pair2.fastq \
 -IP2  Sp_lib2-trimmed-pair1.fastq Sp_lib2-trimmed-pair2.fastq
 
 ```
-
 ## Quality check of Assembly
+###CEGMA
+```
+cegma --genome --threads 32 --output SP_assembly.platanus.fa
+```
+###BUSCO(v1.1b1)
+```
+python3 BUSCO_v1.1b1.py -f \
+-g SP_assembly.platanus.fa  \
+--cpu 16 \
+-o Sp 
+--lineage /busco/metazoa \
+--mode all \
+```
+###Map reads back to assembly with bwa
+```
+ bwa mem \
+ Sp_assembly.platanus.fa \
+ raw_R1.fastq raw_R2.fastq \
+ | samtools view -buS -  | samtools sort - Sp.bwa.sorted
+```
 
 ## Annotation
+###Repeatmodeler 
+```
+RepeatModeler/BuildDatabase -name Sp \
+Sp_assembly.platanus.fa
+-engine ncbi \
+```
+###Repeatmasker(v4-0-3)
+```
+#Create a library with nematoda.repeatmasker from repeatmask, repeatmodeler output (consensi.fa.classified) and Nematoda.lib from Amir (ref?)
+
+cat ematoda.repeatmasker consensi.fa.classified Nematoda.lib > nematoda_LibTE.repeats
+
+#Run cdhit-est (4.6.4) with high cutoff to avoid redundancy
+cd-hit-est -i \
+nematoda_LibTE.repeats \
+-o nematoda_LibTE.repeats.cdhitest \
+-c 0.95 \
+-d 0 \
+-T 16 \
+-M 3000
+
+#Run repeatmasker
+RepeatMasker \
+Sp_assembly.platanus.fa \
+-lib nematoda_LibTE.repeats.cdhitest \
+-dir .
+```
+
+###SNAP (v2013-11-29)
+```
+maker/maker-2.31/bin/cegma2zff \
+/cegma_output/Sp.cegma.gff \
+Sp_assembly.platanus.fa #this creates files genome.ann, genome.dna
+
+fathom genome.ann genome.dna \
+-categorize 1000 \
+
+fathom -export 1000 -plus uni.ann uni.dna
+
+mkdir parameters
+
+cd parameters
+
+forge ../export.ann ../export.dna
+
+cd ../
+
+hmm-assembler.pl \
+Sp_assembly.platanus.fa \
+parameters > Sp.cegmasnap.hmm
+```
+
+###Genemark (es-2.3)
+```
+gm_es.pl  \
+--BP OFF \
+-max_nnn 500 \
+-min_contig 10000 \
+Sp_assembly.platanus.fa.masked #output of repeatmask
+
+#the output of genemark is  mod.es in the mod folder as symbolik link
+```
+###Maker (2.311)
+```
+mpiexec -n 48 maker -fix_nucleotides
+cd *.fa.maker.output/
+gff3_merge -d *.fasta_master_datastore_index.log
+```
+###Augustus (3.0.1)
+```
+maker/bin/maker2zff Sp_assembly.platanus.fa.masked.all.gff
+
+snap/zff2gff3.pl genome.ann | perl -plne 's/\t(\S+)$/\t\.\t$1/' > augustus.train.gff3
+
+#/exports/software/snap/snap-2013-11-29/zff2gff3.pl genome.ann | perl -plne 's/\t(\S+)$/\t\.\t$1/' > augustus.train.gff3
+
+autoAug.pl --species=Sp \
+--genome=Sp_assembly.platanus.fa.masked \
+--trainingset=augustus.train.gff3 \
+--useexisting -v \
+--singleCPU \
+--optrounds=3 > augustus.out.txt
+```
 
 ## Final information
