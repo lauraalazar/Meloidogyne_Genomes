@@ -99,7 +99,7 @@ source /exports/virt_env/python/matplotlib/bin/activate
 
 /blobtools-light/plotblobs.py assembly.blobplot.txt
 ```
-### Filter our reads
+### Filter out reads
 ```
 #Index the assembly with samtools
 samtools faidx assembly_clc.fasta
@@ -172,6 +172,16 @@ platanus gap_close \
 ###CEGMA
 ```
 cegma --genome --threads 32 --output SP_assembly.platanus.fa
+```
+###BUSCO
+```
+python3 BUSCO.py \
+-c 16 \
+-i SP_assembly.platanus.fa \
+-o sp.busco \
+-m geno \
+-l busco/busco-v2.0/nematoda_odb9/ \
+-t sp_busco
 ```
 ###Map reads back to assembly with bwa
 ```
